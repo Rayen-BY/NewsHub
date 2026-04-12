@@ -13,8 +13,8 @@ import { ActivatedRoute, Router } from '@angular/router';
   templateUrl: './auth-card.html',
   styleUrls: ['./auth-card.css']
 })
-export class AuthCard implements OnInit {
-  private http = inject(HttpClient);
+export class AuthCard implements OnInit { 
+  private http = inject(HttpClient); 
   private cdr = inject(ChangeDetectorRef);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
@@ -30,7 +30,9 @@ export class AuthCard implements OnInit {
   ngOnInit(): void {
     // Detect mode from route path
     const path = this.router.url;
+    //apres login reussi : redirige vers la page detail 
     this.returnUrl = this.route.snapshot.queryParamMap.get('returnUrl') || '/';
+    //auth-card.ts => 77
 
     if (path.includes('register')) {
       this.mode = 'signup';
@@ -73,11 +75,12 @@ export class AuthCard implements OnInit {
       }
     });
   }
-
+  //sauvegarde currentUser dans localStorage puis navigateByUrl(returnUrl)
   onLoginSuccess(user: any) {
     this.successUser = user;
     localStorage.setItem('currentUser', JSON.stringify(user));
     this.router.navigateByUrl(this.returnUrl);
+    //news-details-page.ts =< 136
   }
 
   switchToSignup() {

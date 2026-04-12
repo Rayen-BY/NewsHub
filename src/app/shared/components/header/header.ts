@@ -17,11 +17,14 @@ export class HeaderComponent implements OnInit {
 
   ngOnInit(): void {
     const storedTheme = localStorage.getItem(this.storageKey);
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const resolvedTheme = storedTheme ?? (prefersDark ? 'dark' : 'light');
+    const resolvedTheme = storedTheme === 'dark' ? 'dark' : 'light';
 
     this.isDarkMode = resolvedTheme === 'dark';
     this.applyTheme();
+
+    if (!storedTheme) {
+      localStorage.setItem(this.storageKey, resolvedTheme);
+    }
   }
 
   toggleTheme(): void {

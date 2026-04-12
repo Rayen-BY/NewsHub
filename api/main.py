@@ -346,6 +346,13 @@ class CommentRequest(BaseModel):
     article: FavoriteArticleData
     comment_text: str
 
+
+def ensure_user_exists(cursor, user_id: int) -> None:
+    cursor.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+    user = cursor.fetchone()
+    if not user:
+        raise HTTPException(status_code=401, detail="Login required")
+
 @app.post("/login")
 def login(data: LoginData):
     conn = None
@@ -374,14 +381,15 @@ def login(data: LoginData):
 
 
 @app.post("/favorites")
-def save_favorite(payload: SaveFavoriteRequest):
+def save_favorite(payload: SaveFavoriteRequest): #model :319
     conn = None
     try:
         conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor()
-        conn.start_transaction()
+        cursor = conn.cursor() # création du curseur SQL.
+        conn.start_transaction() # démarre explicitement une transaction.
+        ensure_user_exists(cursor, payload.user_id)   #vérifie que l’utilisateur existe; sinon lève HTTP 401.
 
-        news_id = upsert_news_record(cursor, payload.article)
+        news_id = upsert_news_record(cursor, payload.article) #vérifie que l’utilisateur existe; sinon lève HTTP 401 puis récupère son id.
 
         cursor.execute(
             """
@@ -420,6 +428,7 @@ def add_comment(payload: CommentRequest):
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor()
         conn.start_transaction()
+        ensure_user_exists(cursor, payload.user_id)
 
         news_id = upsert_news_record(cursor, payload.article)
 

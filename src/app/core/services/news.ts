@@ -1,6 +1,6 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable, forkJoin, map, of, shareReplay, catchError } from 'rxjs';
+import { Observable, forkJoin, map, of, shareReplay, catchError, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { NewsCategory } from '../models/category.model';
 import { NewsFilters } from '../models/filter.model';
@@ -13,6 +13,7 @@ type RealCategory = Exclude<NewsCategory, 'all'>;
 })
 export class NewsService {
   private readonly http = inject(HttpClient);
+  private readonly searchCachePrefix = 'news-search-cache:';
 
   private readonly categories: RealCategory[] = [
     'technology',
@@ -88,6 +89,13 @@ export class NewsService {
   }
 
   searchNews(filters: NewsFilters): Observable<NewsArticle[]> {
+    const cacheKey = this.buildSearchCacheKey(filters);
+    const cachedArticles = this.readCachedSearch(cacheKey);
+
+    if (cachedArticles) {
+      return of(cachedArticles);
+    }
+
     let params = new HttpParams()
       .set('apikey', environment.newsApiKey)
       .set('language', 'en')
@@ -123,8 +131,62 @@ export class NewsService {
         );
       }),
       map((articles) => articles.filter((article) => !!article.title)),
-      map((articles) => this.dedupeArticles(articles))
+      map((articles) => this.dedupeArticles(articles)),
+      tap((articles) => this.writeCachedSearch(cacheKey, articles))
     );
+  }
+
+  clearSearchCache(): void {
+    try {
+      const keysToRemove: string[] = [];
+
+      for (let index = 0; index < sessionStorage.length; index += 1) {
+        const key = sessionStorage.key(index);
+
+        if (key && key.startsWith(this.searchCachePrefix)) {
+          keysToRemove.push(key);
+        }
+      }
+
+      for (const key of keysToRemove) {
+        sessionStorage.removeItem(key);
+      }
+    } catch {
+      // Ignore storage errors.
+    }
+  }
+
+  private buildSearchCacheKey(filters: NewsFilters): string {
+    return JSON.stringify({
+      category: filters.category,
+      country: filters.country ?? '',
+      source: filters.source ?? '',
+      date: filters.date ?? '',
+      dataType: filters.dataType ?? ''
+    });
+  }
+
+  private readCachedSearch(cacheKey: string): NewsArticle[] | null {
+    try {
+      const rawValue = sessionStorage.getItem(`${this.searchCachePrefix}${cacheKey}`);
+
+      if (!rawValue) {
+        return null;
+      }
+
+      const parsed = JSON.parse(rawValue) as NewsArticle[];
+      return Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private writeCachedSearch(cacheKey: string, articles: NewsArticle[]): void {
+    try {
+      sessionStorage.setItem(`${this.searchCachePrefix}${cacheKey}`, JSON.stringify(articles));
+    } catch {
+      // Ignore storage errors.
+    }
   }
 
   private mapArticle(item: NewsApiArticle, category: RealCategory, index: number): NewsArticle {

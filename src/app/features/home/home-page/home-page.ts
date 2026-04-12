@@ -51,6 +51,11 @@ export class HomePageComponent implements OnInit {
     this.loadNews();
   }
 
+  refreshNews(): void {
+    this.newsService.clearSearchCache();
+    this.loadNews();
+  }
+
   onFiltersChange(filters: NewsFilters): void {
     this.filters = { ...filters };
 

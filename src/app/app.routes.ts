@@ -13,8 +13,8 @@ export const appRoutes: Routes = [
     component: NewsDetailsPageComponent
   },
   {
-    path: 'login',
-    component: AuthCard
+    path: 'login', 
+    component: AuthCard //auth-card.ts => 33
   },
   {
     path: 'register',

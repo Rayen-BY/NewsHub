@@ -31,8 +31,8 @@
         [class.saved]="isSaved"
         [disabled]="isSaving"
         [attr.aria-label]="isSaved ? 'Remove from saved articles' : 'Save Article'"
-        (click)="toggleSaveArticle()"
-      >
+         (click)="toggleSaveArticle()" 
+      > <!-- ts 97 -->
         {{ isSaving ? 'Saving...' : (isSaved ? 'Saved' : 'Save Article') }}
       </button>
       <button type="button" class="action-btn ask-btn" aria-label="Ask AI">Ask AI</button>
@@ -54,6 +54,8 @@
       <h2 id="comments-heading" class="comments-heading">Comments ({{ comments.length }})</h2>
 
       <div *ngIf="isLoggedIn(); else loginPrompt" class="comment-box">
+         <!-- vérifie la présence de currentUser dans le localStorage via getCurrentUserId(): -->
+          <!-- cmnt :news-details-page => 279 -->
         <textarea
           class="comment-input"
           [(ngModel)]="commentText"
@@ -68,8 +70,9 @@
           type="button"
           class="action-btn login-btn"
           [disabled]="submittingComment"
-          (click)="submitComment()"
+          (click)="submitComment()" 
         >
+        <!-- app ts 157 -->
           {{ submittingComment ? 'Posting...' : 'Post Comment' }}
         </button>
       </div>
@@ -77,9 +80,15 @@
       <ng-template #loginPrompt>
         <div class="comment-box">
           <p>You need to be logged in to comment</p>
-          <a class="login-btn" [routerLink]="['/login']" [queryParams]="{ returnUrl: loginReturnUrl }">
-            Log in to Comment
-          </a>
+          <button
+            type="button"
+            class="action-btn login-btn" 
+            [routerLink]="['/login']"
+            [queryParams]="{ returnUrl: loginReturnUrl }"
+          >
+          <!-- h71 -->
+            Post Comment
+          </button>
         </div>
       </ng-template>
 

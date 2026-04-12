@@ -24,7 +24,7 @@ interface CheckFavoriteResponse {
 export class FavoritesService {
   private readonly http = inject(HttpClient);
   private readonly apiBaseUrl = 'http://127.0.0.1:8000';
-
+    //service poste vers /favorites côté backend => main 383
   saveArticle(userId: number, article: NewsArticle): Observable<SaveFavoriteResponse> {
     return this.http.post<SaveFavoriteResponse>(`${this.apiBaseUrl}/favorites`, {
       user_id: userId,

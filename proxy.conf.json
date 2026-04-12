@@ -1,5 +1,5 @@
 {
-  "/api": {
+  "/api": { 
     "target": "https://newsdata.io",
     "secure": true,
     "changeOrigin": true,
@@ -8,3 +8,4 @@
     }
   }
 }
+
