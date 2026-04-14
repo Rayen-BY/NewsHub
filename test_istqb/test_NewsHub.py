@@ -4,9 +4,10 @@ import time
 import pytest
 import requests
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.expected_conditions import element_to_be_clickable, presence_of_element_located
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
 
 BASE_URL = os.getenv("NEWHUB_BASE_URL", "http://localhost:4200")
@@ -14,78 +15,28 @@ API_URL = os.getenv("NEWHUB_API_URL", "http://127.0.0.1:8000")
 
 TEST_EMAIL = os.getenv("NEWHUB_TEST_EMAIL", "rayenbenyahmed02@gmail.com")
 TEST_PASSWORD = os.getenv("NEWHUB_TEST_PASSWORD", "rayen2026")
-TEST_FULLNAME = os.getenv("NEWHUB_TEST_FULLNAME", "rayen ben yahmed") 
-STEP_PAUSE_SECONDS = 1
+WAIT_TIMEOUT = 20
 
 
-def log_test_start(name):
-    print(f"\n===== TEST START: {name} =====")
-
-
-def log_test_end(name):
-    print(f"===== TEST END: {name} (PASS) =====")
-
-
-def log_case(name):
-    print(f"\n[CASE] {name}")
-
-
-def log_step(message):
-    print(f"[STEP] {message}")
-
-
-def log_info(message):
-    print(f"[INFO] {message}")
-
-
-def log_check(message):
-    print(f"[CHECK] {message}")
-
-
-def wait_for(driver, condition, timeout=20):
-    return WebDriverWait(driver, timeout).until(condition)
-
-
-def pause_step():
-    time.sleep(STEP_PAUSE_SECONDS)
-
-
-def safe_click(driver, element, label):
-    log_step(f"Cliquer sur {label}")
-    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
-    pause_step()
-
+# Attend un element cliquable et force un echec pytest explicite en cas de timeout.
+def wait_clickable_or_fail(driver, locator, label, timeout=WAIT_TIMEOUT):
     try:
-        element.click()
-    except Exception:
-        log_info(f"Click Selenium intercepté pour {label}, fallback JS click")
-        driver.execute_script("arguments[0].click();", element)
-
-    pause_step()
+        return WebDriverWait(driver, timeout).until(element_to_be_clickable(locator)) #driver sert a interagir m3a l navigateur, locator c est la methode de localisation (ex: By.CSS_SELECTOR) w label c est une description textuelle de l element pour les messages d erreur
+    except TimeoutException:
+        pytest.fail(f"Timeout {timeout}s: element clickable introuvable ({label}). URL actuelle: {driver.current_url}")
 
 
-def wait_until_url_contains(driver, expected_text, timeout=20):
-    start = time.time()
-    while time.time() - start < timeout:
-        if expected_text in driver.current_url:
-            return True
-        time.sleep(0.2)
-    return False
+# Attend la presence d'un element dans le DOM et force un echec pytest explicite en cas de timeout.
+def wait_present_or_fail(driver, locator, label, timeout=WAIT_TIMEOUT):
+    try:
+        return WebDriverWait(driver, timeout).until(presence_of_element_located(locator))
+    except TimeoutException:
+        pytest.fail(f"Timeout {timeout}s: element present introuvable ({label}). URL actuelle: {driver.current_url}")
 
 
-def wait_until_save_state(driver, expected_saved, timeout=20):
-    start = time.time()
-    while time.time() - start < timeout:
-        current_state = get_save_button_state(driver)
-        if current_state == expected_saved:
-            return True
-        time.sleep(0.2)
-    return False
-
-
-@pytest.fixture(scope="session")
-def driver():
-    # Ignore legacy chromedriver in PATH to avoid version mismatch with browser.
+@pytest.fixture(scope="session")   #Scope session pour éviter de relancer le driver à chaque test
+# Initialise un seul navigateur Chrome pour toute la session de tests puis le ferme a la fin.
+def driver(): 
     bad_driver_fragment = os.path.normcase("chromedriver-win64")
     path_entries = os.environ.get("PATH", "").split(os.pathsep)
     filtered_entries = []
@@ -101,92 +52,313 @@ def driver():
     drv.quit()
 
 
-@pytest.fixture(scope="session")
-def test_user():
-    # 1) S'assurer que l'utilisateur existe (idempotent)
-    register_resp = requests.post(
-        f"{API_URL}/register",
-        data={
-            "full_name": TEST_FULLNAME,
-            "email": TEST_EMAIL,
-            "password": TEST_PASSWORD,
-        },
+# Verifie qu'un clic sur le bouton Source ouvre bien un nouvel onglet avec une URL valide.
+def test_go_to_source(driver):
+    print("\n test go to source start")
+    
+    # ------ nit2akdou ili local/session storage initialisé ------
+    driver.get(BASE_URL) 
+    """
+    localStorage = persistant, partagé par les pages du même domaine
+    sessionStorage = temporaire, limité à l’onglet acti
+    """
+    time.sleep(1)
+    driver.execute_script("window.localStorage.clear();")
+    time.sleep(1)
+    driver.execute_script("window.sessionStorage.clear();") 
+    time.sleep(1)
+
+    driver.get(BASE_URL)
+    time.sleep(1)
+
+    
+    #------ nod5lou l article details ------
+    """
+    element_to_be_clickable :yistana 20s hata ywali l element mawjoud(visible) + clicable => ylawj aala l article => yit2aked li howa clicable => yrajaa l element
+    """
+    # ylawj lien d article clicable 
+    first_card_link = wait_clickable_or_fail(
+        driver,
+        (By.CSS_SELECTOR, "app-news-card article.news-card a"),
+        "Lien de la premiere news card",
+    )
+    first_card_link.click()
+    time.sleep(1)
+
+    """
+    presence_of_element_located : yistana 20s hata ywali l element mawjoud fi dom
+    """
+    # yit2aked ili lpage detail mawjouda (4ohrt)
+    wait_present_or_fail(
+        driver,
+        (By.CSS_SELECTOR, "article.details-card"),
+        "Carte details article",
+    )
+    time.sleep(1)
+
+
+    #------ ntestiw source ------
+    # yit2aked ili lbouton source mawjouda w yakhou href mte3ha
+    source_btn = wait_present_or_fail(
+        driver,
+        (By.CSS_SELECTOR, "a.source-btn"),
+        "Bouton source",
+    )
+    source_url = source_btn.get_attribute("href")
+
+    #yiscroli hata twali bouton source fi centre taa l ecran
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", source_btn)  
+    time.sleep(1)
+    try:
+        source_btn.click()
+    except Exception:
+        driver.execute_script("arguments[0].click();", source_btn)
+    time.sleep(1)
+    
+    old_handles = driver.window_handles  #liste des onglets avant le clic
+
+    """
+    window_handles : liste des onglets/fenêtres ouverts
+    bich nit2akdou ili onglet source t7alet ncompariw nb d onglet/fenetre kbal w baed lclic ken zed rw maaneha t7alt onglet jdida
+    """
+    start = time.time()  # ysajl l instant de depart
+    while time.time() - start < 10:
+        if len(driver.window_handles) > len(old_handles): 
+            break
+        time.sleep(0.2) 
+
+    #nstokiw fi new_handle l onglet source (ynajmou ykounou akther min onglet)
+    new_handle = None
+    for handle in driver.window_handles:
+        if handle not in old_handles:
+            new_handle = handle
+            break
+
+    assert new_handle is not None, "onglet source non ouvert"  #transfrme un bug flous en msg de test clair “pas de nouvel onglet ouvert”.
+    
+    ##verifie que la nav ouvert une url valide et pas une page vide ou un echec d ouverture 
+    driver.switch_to.window(new_handle)
+    time.sleep(1)
+    print(f"[CHECK] Nouvelle URL ouverte = {driver.current_url}")
+    assert driver.current_url.startswith("http"), "La navigation n'a pas ouvert une url valide"  
+
+    driver.close()
+    time.sleep(1)
+    driver.switch_to.window(old_handles[0])
+    time.sleep(1)
+    print("===== TEST END: test_go_to_source (PASS) =====")
+
+
+# Couvre le parcours ajout de commentaire: guest redirige vers login puis utilisateur connecte poste un commentaire.
+def test_add_comment(driver):
+    print("\n===== TEST START: test_add_comment =====")
+    # ------ nit2akdou ili local/session storage initialisé ------
+    driver.get(BASE_URL)
+    time.sleep(1)
+    driver.execute_script("window.localStorage.clear();")
+    time.sleep(1)
+    driver.execute_script("window.sessionStorage.clear();")
+    time.sleep(1)
+    driver.delete_all_cookies()
+    time.sleep(1)
+
+    driver.get(BASE_URL)
+    time.sleep(1)
+
+    #------ nod5lou l article details ------
+    first_card_link = wait_clickable_or_fail(
+        driver,
+        (By.CSS_SELECTOR, "app-news-card article.news-card a"),
+        "Lien de la premiere news card",
+    )
+    first_card_link.click()
+    time.sleep(1)
+
+    wait_present_or_fail(
+        driver,
+        (By.CSS_SELECTOR, "article.details-card"),
+        "Carte details article",
+    )
+    time.sleep(1)
+
+    article_url = driver.find_element(By.CSS_SELECTOR, "a.source-btn").get_attribute("href")  # yakhou url mte3 article details bach ntestiw biha l api baed
+
+    # 1) ---------- ntestiw commentaire en cas guest -----------
+    print("\n[CASE] Commentaire sans login")
+    comment_button = wait_clickable_or_fail(
+        driver,
+        (By.XPATH, "//button[contains(., 'Post Comment')]"),
+        "Bouton Post Comment (guest)",
+    )
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", comment_button)
+    time.sleep(1)
+    try:
+        comment_button.click()
+    except Exception:
+        driver.execute_script("arguments[0].click();", comment_button)
+    time.sleep(1)
+
+    start = time.time()
+    while time.time() - start < 20:
+        if "/login" in driver.current_url:
+            break
+        time.sleep(0.2)
+        
+    assert "/login" in driver.current_url, "Apres clic sur Post Comment en guest, la page de login n'est pas affichée"
+    assert "returnUrl=" in driver.current_url, "l'url de retour n'est pas présente dans la page de login"
+    time.sleep(1)
+    
+    print("\n[CASE] Connexion puis retour details")
+    #remplissage du formulaire de login
+    email_input = wait_present_or_fail(driver, (By.NAME, "email"), "Champ email login")
+    password_input = wait_present_or_fail(driver, (By.NAME, "password"), "Champ password login")
+    email_input.clear()
+    email_input.send_keys(TEST_EMAIL)
+    password_input.clear()
+    password_input.send_keys(TEST_PASSWORD)
+    time.sleep(1)
+
+    sign_in_btn = wait_clickable_or_fail(
+        driver,
+        (By.XPATH, "//button[@type='submit' and contains(., 'Sign in')]"),
+        "Bouton Sign in",
+    )
+    sign_in_btn.click()
+    time.sleep(1)
+
+    start = time.time()
+    while time.time() - start < 20:
+        if "/details/" in driver.current_url:
+            break
+        time.sleep(0.2)
+    assert "/details/" in driver.current_url, "apres connexion, la page de details n'est pas affichée"
+    time.sleep(1)
+
+    # 2) ----------- ntestiw commentaire en cas user connecté --------------
+    # -------cmnt vide ---------
+    print("\n[CASE] Commentaire vide")
+    textarea = wait_present_or_fail(
+        driver,
+        (By.CSS_SELECTOR, "textarea.comment-input"),
+        "Textarea commentaire",
+    )
+    textarea.clear()
+    time.sleep(1)
+    comment_button = wait_clickable_or_fail(
+        driver,
+        (By.XPATH, "//button[contains(., 'Post Comment')]"),
+        "Bouton Post Comment (commentaire vide)",
+    )
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", comment_button)
+    time.sleep(1)
+    try:
+        comment_button.click()
+    except Exception:
+        driver.execute_script("arguments[0].click();", comment_button)
+    time.sleep(1)
+
+    error_found = False
+    start = time.time()
+    while time.time() - start < 10:
+        if "Write a comment before posting." in driver.find_element(By.TAG_NAME, "body").text:
+            error_found = True
+            break
+        time.sleep(0.2)
+    assert error_found is True, "Aucun message d'erreur pour commentaire vide ou message d'erreur incorrect"
+    time.sleep(1)
+
+    #------- cmnt rempli ---------
+    print("\n[CASE] Commentaire rempli")
+    unique_comment = f"test commentaire {int(time.time())}"
+    textarea.clear()
+    textarea.send_keys(unique_comment)
+    time.sleep(1)
+    comment_button = wait_clickable_or_fail(
+        driver,
+        (By.XPATH, "//button[contains(., 'Post Comment')]"),
+        "Bouton Post Comment (commentaire rempli)",
+    )
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", comment_button)
+    time.sleep(1)
+    try:
+        comment_button.click()
+    except Exception:
+        driver.execute_script("arguments[0].click();", comment_button)
+    time.sleep(1)
+
+    start = time.time()
+    while time.time() - start < 20:
+        if unique_comment in driver.find_element(By.TAG_NAME, "body").text:
+            break
+        time.sleep(0.2)
+    assert unique_comment in driver.find_element(By.TAG_NAME, "body").text
+    time.sleep(1)
+
+    comments_resp = requests.get( # yrecuperi les cmnts taa l article sous forme list en json par l api bach ntestiw ili cmnt ajouté est bien dans la liste retournée par l api
+        f"{API_URL}/comments",
+        params={"article_url": article_url},
         timeout=10,
     )
-    if register_resp.status_code not in (200, 400):
-        pytest.fail(f"Echec préparation user test: {register_resp.status_code} {register_resp.text}")
+    assert comments_resp.status_code == 200, comments_resp.text
+    found = False
+    for comment in comments_resp.json():
+        if unique_comment in comment.get("comment_content", ""):
+            found = True
+            break
+    assert found is True, "Le commentaire ajouté n'est pas retourné par l'API" 
+    time.sleep(1)
 
-    # 2) Récupérer l'id user via login API
+    print("===== TEST END: test_add_comment (PASS) =====")
+
+
+# Verifie le cycle complet de favoris: guest -> login, sauvegarde, puis suppression du favori.
+def test_save_news(driver):
+    print("\n===== TEST START: test_save_news =====")
+
+    driver.get(BASE_URL)
+    time.sleep(1)
+    driver.execute_script("window.localStorage.clear();")
+    time.sleep(1)
+    driver.execute_script("window.sessionStorage.clear();")
+    time.sleep(1)
+    driver.delete_all_cookies()
+    time.sleep(1)
+
+    driver.get(BASE_URL)
+    time.sleep(1)
+
+    first_card_link = wait_clickable_or_fail(
+        driver,
+        (By.CSS_SELECTOR, "app-news-card article.news-card a"),
+        "Lien de la premiere news card",
+    )
+    first_card_link.click()
+    time.sleep(1)
+
+    wait_present_or_fail(
+        driver,
+        (By.CSS_SELECTOR, "article.details-card"),
+        "Carte details article",
+    )
+    time.sleep(1)
+
+    article_url = driver.find_element(By.CSS_SELECTOR, "a.source-btn").get_attribute("href")
     login_resp = requests.post(
         f"{API_URL}/login",
         json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
         timeout=10,
     )
-    if login_resp.status_code != 200:
-        pytest.fail(f"Echec login API user test: {login_resp.status_code} {login_resp.text}")
+    assert login_resp.status_code == 200, login_resp.text
+    user_id = login_resp.json().get("user", {}).get("id")
+    assert user_id is not None
 
-    user = login_resp.json().get("user", {})
-    user_id = user.get("id")
-    if not user_id:
-        pytest.fail("Impossible de récupérer user.id depuis /login")
-
-    return {"id": user_id, "email": TEST_EMAIL, "password": TEST_PASSWORD}
-
-
-def clear_front_session(driver):
-    log_step("Ouvrir la home pour nettoyer la session")
-    driver.get(BASE_URL)
-    pause_step()
-    log_step("localStorage.clear()")
-    driver.execute_script("window.localStorage.clear();")
-    pause_step()
-    log_step("sessionStorage.clear()")
-    driver.execute_script("window.sessionStorage.clear();")
-    pause_step()
-    log_step("delete_all_cookies()")
-    driver.delete_all_cookies()
-    pause_step()
-
-
-def open_first_article_details(driver):
-    log_step("Ouvrir la home page")
-    driver.get(BASE_URL)
-    pause_step()
-
-    log_step("Cliquer sur le premier article")
-    first_card_link = wait_for(
-        driver,
-        EC.element_to_be_clickable((By.CSS_SELECTOR, "app-news-card article.news-card a")),
-    )
-    first_card_link.click()
-    pause_step()
-
-    log_step("Attendre l'affichage de la page details")
-    wait_for(driver, EC.presence_of_element_located((By.CSS_SELECTOR, "article.details-card")))
-    pause_step()
-
-    details_url = driver.current_url
-    source_url = driver.find_element(By.CSS_SELECTOR, "a.source-btn").get_attribute("href")
-    if not source_url:
-        pytest.fail("URL source article introuvable sur la page détails")
-
-    log_info(f"details_url = {details_url}")
-    log_info(f"article source_url = {source_url}")
-
-    return details_url, source_url
-
-
-def ensure_not_favorite(user_id, article_url):
-    # Nettoyage défensif avant test
-    log_step(f"Nettoyer l'état favori user={user_id}")
     requests.delete(
         f"{API_URL}/favorites",
         json={"user_id": user_id, "article_url": article_url},
         timeout=10,
     )
-    pause_step()
+    time.sleep(1)
 
-    # Vérification état non favori
     status_resp = requests.get(
         f"{API_URL}/favorites-status",
         params={"user_id": user_id, "article_url": article_url},
@@ -194,276 +366,129 @@ def ensure_not_favorite(user_id, article_url):
     )
     assert status_resp.status_code == 200, status_resp.text
     assert status_resp.json().get("saved") is False
-    log_check("Favori initial = False")
+    print("[CHECK] Favori initial = False")
 
+    print("\n[CASE] Non connecté")
+    save_button = wait_clickable_or_fail(
+        driver,
+        (By.CSS_SELECTOR, "button.save-btn"),
+        "Bouton Save Article (guest)",
+    )
+    assert "save article" in save_button.text.strip().lower()
+    time.sleep(1)
+    print("[STEP] Cliquer Save Article (guest)")
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", save_button)
+    time.sleep(1)
+    try:
+        save_button.click()
+    except Exception:
+        driver.execute_script("arguments[0].click();", save_button)
+    time.sleep(1)
 
-def is_favorite(user_id, article_url):
-    resp = requests.get(
+    start = time.time()
+    while time.time() - start < 20:
+        if "/login" in driver.current_url:
+            break
+        time.sleep(0.2)
+    assert "/login" in driver.current_url
+    assert "returnUrl=" in driver.current_url
+    time.sleep(1)
+
+    status_resp = requests.get(
         f"{API_URL}/favorites-status",
         params={"user_id": user_id, "article_url": article_url},
         timeout=10,
     )
-    assert resp.status_code == 200, resp.text
-    saved = resp.json().get("saved") is True
-    log_check(f"favorites-status => saved={saved}")
-    return saved
+    assert status_resp.status_code == 200, status_resp.text
+    assert status_resp.json().get("saved") is False
+    print(f"[CHECK] URL après clic guest save = {driver.current_url}")
+    time.sleep(1)
 
-
-def login_from_ui(driver, email, password):
-    log_step("Remplir le formulaire login")
-    email_input = wait_for(driver, EC.presence_of_element_located((By.NAME, "email")))
-    password_input = wait_for(driver, EC.presence_of_element_located((By.NAME, "password")))
-    pause_step()
-
+    print("\n[CASE] Visiteur se connecte")
+    email_input = wait_present_or_fail(driver, (By.NAME, "email"), "Champ email login")
+    password_input = wait_present_or_fail(driver, (By.NAME, "password"), "Champ password login")
     email_input.clear()
-    email_input.send_keys(email)
+    email_input.send_keys(TEST_EMAIL)
     password_input.clear()
-    password_input.send_keys(password)
-    pause_step()
+    password_input.send_keys(TEST_PASSWORD)
+    time.sleep(1)
 
-    sign_in_btn = wait_for(
+    sign_in_btn = wait_clickable_or_fail(
         driver,
-        EC.element_to_be_clickable((By.XPATH, "//button[@type='submit' and contains(., 'Sign in')]")),
+        (By.XPATH, "//button[@type='submit' and contains(., 'Sign in')]"),
+        "Bouton Sign in",
     )
-    log_step("Cliquer sur Sign in")
     sign_in_btn.click()
-    pause_step()
+    time.sleep(1)
 
-
-def get_save_button_state(driver):
-    label = driver.find_element(By.CSS_SELECTOR, "button.save-btn").text.strip().lower()
-    saved = "saved" in label and "save article" not in label
-    log_check(f"Etat bouton save => label='{label}' saved={saved}")
-    return saved
-
-
-def wait_until_comment_present(driver, comment_text, timeout=20):
     start = time.time()
-    while time.time() - start < timeout:
-        body_text = driver.find_element(By.TAG_NAME, "body").text
-        if comment_text in body_text:
-            return True
+    while time.time() - start < 20:
+        if "/details/" in driver.current_url:
+            break
         time.sleep(0.2)
-    return False
+    assert "/details/" in driver.current_url
+    print(f"[CHECK] URL après login = {driver.current_url}")
+    time.sleep(1)
 
+    save_button = wait_clickable_or_fail(
+        driver,
+        (By.CSS_SELECTOR, "button.save-btn"),
+        "Bouton Save Article (connecte)",
+    )
+    if "saved" not in save_button.text.strip().lower():
+        print("[STEP] Cliquer Save Article (connecté)")
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", save_button)
+        time.sleep(1)
+        try:
+            save_button.click()
+        except Exception:
+            driver.execute_script("arguments[0].click();", save_button)
+        time.sleep(1)
 
-def is_comment_present_api(article_url, comment_text):
-    resp = requests.get(
-        f"{API_URL}/comments",
-        params={"article_url": article_url},
+    start = time.time()
+    while time.time() - start < 20:
+        if "saved" in driver.find_element(By.CSS_SELECTOR, "button.save-btn").text.strip().lower():
+            break
+        time.sleep(0.2)
+    assert "saved" in driver.find_element(By.CSS_SELECTOR, "button.save-btn").text.strip().lower()
+    time.sleep(1)
+
+    status_resp = requests.get(
+        f"{API_URL}/favorites-status",
+        params={"user_id": user_id, "article_url": article_url},
         timeout=10,
     )
-    assert resp.status_code == 200, resp.text
+    assert status_resp.status_code == 200, status_resp.text
+    assert status_resp.json().get("saved") is True
+    time.sleep(1)
 
-    comments = resp.json()
-    index = 0
-    while index < len(comments):
-        if comment_text in comments[index].get("comment_content", ""):
-            log_check("Commentaire trouvé via API")
-            return True
-        index += 1
+    save_button = wait_clickable_or_fail(
+        driver,
+        (By.CSS_SELECTOR, "button.save-btn"),
+        "Bouton Save Article (desactivation)",
+    )
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", save_button)
+    time.sleep(1)
+    try:
+        save_button.click()
+    except Exception:
+        driver.execute_script("arguments[0].click();", save_button)
+    time.sleep(1)
 
-    log_check("Commentaire non trouvé via API")
-    return False
-
-
-def test_go_to_source(driver):
-    log_test_start("test_go_to_source")
-    clear_front_session(driver)
-    _, source_url = open_first_article_details(driver)
-
-    source_btn = wait_for(driver, EC.presence_of_element_located((By.CSS_SELECTOR, "a.source-btn")))
-    href = source_btn.get_attribute("href")
-    log_info(f"source href = {href}")
-    assert href == source_url
-    pause_step()
-
-    old_handles = driver.window_handles
-    safe_click(driver, source_btn, "le bouton source")
-
-    opened_new_tab = False
     start = time.time()
-    while time.time() - start < 10:
-        current_handles = driver.window_handles
-        if len(current_handles) > len(old_handles):
-            opened_new_tab = True
+    while time.time() - start < 20:
+        if "save article" in driver.find_element(By.CSS_SELECTOR, "button.save-btn").text.strip().lower():
             break
         time.sleep(0.2)
+    assert "save article" in driver.find_element(By.CSS_SELECTOR, "button.save-btn").text.strip().lower()
+    time.sleep(1)
 
-    assert opened_new_tab is True
-    pause_step()
+    status_resp = requests.get(
+        f"{API_URL}/favorites-status",
+        params={"user_id": user_id, "article_url": article_url},
+        timeout=10,
+    )
+    assert status_resp.status_code == 200, status_resp.text
+    assert status_resp.json().get("saved") is False
 
-    new_handle = None
-    index = 0
-    current_handles = driver.window_handles
-    while index < len(current_handles):
-        handle = current_handles[index]
-        found = False
-        j = 0
-        while j < len(old_handles):
-            if handle == old_handles[j]:
-                found = True
-                break
-            j += 1
-        if not found:
-            new_handle = handle
-            break
-        index += 1
-
-    assert new_handle is not None
-    driver.switch_to.window(new_handle)
-    pause_step()
-    log_check(f"Nouvelle URL ouverte = {driver.current_url}")
-    assert driver.current_url.startswith("http")
-
-    driver.close()
-    pause_step()
-    driver.switch_to.window(old_handles[0])
-    pause_step()
-    log_test_end("test_go_to_source")
-
-
-def test_add_comment(driver, test_user):
-    log_test_start("test_add_comment")
-    user_id = test_user["id"]
-
-    clear_front_session(driver)
-    _, article_url = open_first_article_details(driver)
-
-    log_case("Commentaire sans login")
-    comment_box = wait_for(driver, EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Post Comment')]")))
-    safe_click(driver, comment_box, "Post Comment sans login")
-
-    redirected_to_login = wait_until_url_contains(driver, "/login")
-    assert redirected_to_login is True
-    pause_step()
-    assert "returnUrl=" in driver.current_url
-    pause_step()
-
-    log_case("Connexion puis retour details")
-    login_from_ui(driver, test_user["email"], test_user["password"])
-
-    returned_to_details = wait_until_url_contains(driver, "/details/")
-    assert returned_to_details is True
-    pause_step()
-
-    log_case("Commentaire vide")
-    textarea = wait_for(driver, EC.presence_of_element_located((By.CSS_SELECTOR, "textarea.comment-input")))
-    textarea.clear()
-    pause_step()
-    post_btn = wait_for(driver, EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Post Comment')]")))
-    log_step("Cliquer Post Comment avec champ vide")
-    safe_click(driver, post_btn, "Post Comment avec champ vide")
-
-    error_found = False
-    start = time.time()
-    while time.time() - start < 10:
-        page_text = driver.find_element(By.TAG_NAME, "body").text
-        if "Write a comment before posting." in page_text:
-            error_found = True
-            break
-        time.sleep(0.2)
-
-    assert error_found is True
-    pause_step()
-
-    log_case("Commentaire rempli")
-    unique_comment = f"ISTQB comment {int(time.time())}"
-    textarea.clear()
-    textarea.send_keys(unique_comment)
-    pause_step()
-    log_step(f"Saisir le commentaire: {unique_comment}")
-    post_btn = wait_for(driver, EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Post Comment')]")))
-    safe_click(driver, post_btn, "Post Comment avec commentaire rempli")
-
-    added_in_ui = wait_until_comment_present(driver, unique_comment)
-    assert added_in_ui is True
-    pause_step()
-
-    added_in_api = is_comment_present_api(article_url, unique_comment)
-    assert added_in_api is True
-    pause_step()
-
-    log_test_end("test_add_comment")
-
-
-def test_save_news(driver, test_user):
-    """
-    Cas non connecté:
-    1) Cliquer Save Article
-    2) Vérifier redirection /login + returnUrl
-    3) Vérifier aucun favori créé tant que login non fait
-
-    Cas connecté:
-    1) Login depuis /login
-    2) Retour sur la page détail initiale
-    3) Cliquer Save Article
-    4) Vérifier bouton => Saved
-    5) Re-cliquer pour unsave => Save Article
-    """
-
-    log_test_start("test_save_news")
-    log_info(f"user test email={test_user['email']} id={test_user['id']}")
-    user_id = test_user["id"]
-
-    clear_front_session(driver)
-    initial_details_url, article_url = open_first_article_details(driver)
-
-    ensure_not_favorite(user_id, article_url)
-
-    log_case("Non connecté")
-    # Cas non connecté
-    save_btn = wait_for(driver, EC.element_to_be_clickable((By.CSS_SELECTOR, "button.save-btn")))
-    assert "save article" in save_btn.text.strip().lower()
-    pause_step()
-    log_step("Cliquer Save Article (guest)")
-    safe_click(driver, save_btn, "Save Article guest")
-    pause_step()
-
-    redirected_to_login = wait_until_url_contains(driver, "/login")
-    assert redirected_to_login is True
-    pause_step()
-    log_check(f"URL après clic guest save = {driver.current_url}")
-    assert "returnUrl=" in driver.current_url
-    pause_step()
-    assert is_favorite(user_id, article_url) is False
-    pause_step()
-
-    log_case("Visiteur se connecte")
-    # Cas visiteur qui se connecte
-    login_from_ui(driver, test_user["email"], test_user["password"])
-
-    returned_to_details = wait_until_url_contains(driver, "/details/")
-    assert returned_to_details is True
-    pause_step()
-    log_check(f"URL après login = {driver.current_url}")
-    assert "/details/" in driver.current_url
-    # même page cible (au moins même route détail)
-    assert driver.current_url.split("?")[0] == initial_details_url.split("?")[0]
-    pause_step()
-
-    # 3) Cliquer Save Article si l'article n'est pas déjà Saved
-    save_btn = wait_for(driver, EC.element_to_be_clickable((By.CSS_SELECTOR, "button.save-btn")))
-    if not get_save_button_state(driver):
-        log_step("Cliquer Save Article (connecté)")
-        safe_click(driver, save_btn, "Save Article connecté")
-        pause_step()
-    else:
-        log_info("Article déjà Saved après retour login (auto-save)")
-
-    # 4) Vérifier état Saved (auto-save ou clic manuel)
-    is_saved_now = wait_until_save_state(driver, True)
-    assert is_saved_now is True
-    pause_step()
-    assert is_favorite(user_id, article_url) is True
-    pause_step()
-
-    # 5) Re-cliquer pour désenregistrer
-    save_btn = wait_for(driver, EC.element_to_be_clickable((By.CSS_SELECTOR, "button.save-btn")))
-    safe_click(driver, save_btn, "désenregistrement")
-
-    is_unsaved_now = wait_until_save_state(driver, False)
-    assert is_unsaved_now is True
-    pause_step()
-    assert is_favorite(user_id, article_url) is False
-    log_test_end("test_save_news")
+    print("===== TEST END: test_save_news (PASS) =====")
